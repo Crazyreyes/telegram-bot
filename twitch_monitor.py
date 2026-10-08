@@ -1,121 +1,200 @@
 import asyncio
+import logging
+
 import aiohttp
-import os
-from dotenv import load_dotenv
+from html import escape
 
-load_dotenv()
+from config import STREAM_LOG_CHAT_ID, TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET
+from db import log_twitch_event
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-STREAM_LOG_CHAT_ID = os.getenv("STREAM_LOG_CHAT_ID")
-TWITCH_CLIENT_ID = os.getenv("TWITCH_CLIENT_ID")
-TWITCH_CLIENT_SECRET = os.getenv("TWITCH_CLIENT_SECRET")
+logger = logging.getLogger(__name__)
+
+
+class TwitchTokenExpiredError(Exception):
+    pass
+
 
 TWITCH_STREAMERS = [
-    {
-        "username": "streamer_one",
-    },
-    {
-        "username": "streamer_two",
-    }
+    {"username": "streamer_one"},
+    {"username": "streamer_two"},
 ]
 
 access_token = None
 startup_summary = []
 stream_state = {}
+session: aiohttp.ClientSession | None = None
 
-session = None
 
 async def get_access_token():
-    global access_token
+
+    global access_token, session
+
+    if session is None:
+        raise RuntimeError("Twitch session is not initialized.")
 
     url = "https://id.twitch.tv/oauth2/token"
-
     params = {
         "client_id": TWITCH_CLIENT_ID,
         "client_secret": TWITCH_CLIENT_SECRET,
-        "grant_type": "client_credentials"
+        "grant_type": "client_credentials",
     }
 
     async with session.post(url, params=params) as response:
-
+        response.raise_for_status()
         data = await response.json()
-
         access_token = data["access_token"]
 
-    print("[TWITCH] Access token obtained.")
+    logger.info("[TWITCH] Access token obtained.")
+
+
+def get_stream_event(previous_state, stream):
+    """
+    Determine what changed between the previous Twitch state
+    and the current Twitch stream state.
+
+    Returns:
+        "LIVE"            - streamer went from offline to live
+        "OFFLINE"         - streamer went from live to offline
+        "STREAM_UPDATE"  - title or game changed
+        None              - nothing changed
+    """
+
+    # Streamer is currently offline
+    if stream is None:
+        if previous_state["live"]:
+            return "OFFLINE"
+
+        return None
+
+    # Streamer is currently live but was previously offline
+    if not previous_state["live"]:
+        return "LIVE"
+
+    # Streamer was already live
+    if (
+        stream["title"] != previous_state["title"]
+        or stream["game_name"] != previous_state["game"]
+    ):
+        return "STREAM_UPDATE"
+
+    # Nothing changed
+    return None
+
+
+async def get_stream_data(username):
+    global session
+
+    if session is None:
+        raise RuntimeError("Twitch session is not initialized.")
+
+    headers = {
+        "Client-ID": TWITCH_CLIENT_ID,
+        "Authorization": f"Bearer {access_token}",
+    }
+
+    async with session.get(
+        f"https://api.twitch.tv/helix/streams?user_login={username}",
+        headers=headers,
+    ) as response:
+
+        if response.status == 401:
+            raise TwitchTokenExpiredError()
+
+        response.raise_for_status()
+        data = await response.json()
+
+    return data
+
 
 async def check_streamer(streamer, bot):
 
     username = streamer["username"]
 
-    headers = {
-        "Client-ID": TWITCH_CLIENT_ID,
-        "Authorization": f"Bearer {access_token}"
-    }
-
-    async with session.get(
-        f"https://api.twitch.tv/helix/streams?user_login={username}",
-        headers=headers
-    ) as response:
-
-        if response.status == 401:
-            raise Exception("TOKEN_EXPIRED")
-
-        data = await response.json()
+    data = await get_stream_data(username)
 
     is_live = len(data["data"]) > 0
 
     # First startup
     if username not in stream_state:
-
         if is_live:
-
             stream = data["data"][0]
-
             stream_state[username] = {
                 "live": True,
                 "title": stream["title"],
-                "game": stream["game_name"]
+                "game": stream["game_name"],
             }
-
+            await log_twitch_event(
+                twitch_username=username,
+                event_type="STARTUP_LIVE",
+                twitch_display_name=stream["user_name"],
+                stream_id=stream.get("id"),
+                title=stream["title"],
+                game_name=stream["game_name"],
+                message="Detected live during monitor startup.",
+                raw_payload=stream,
+            )
         else:
-
             stream_state[username] = {
                 "live": False,
                 "title": None,
-                "game": None
+                "game": None,
             }
+            await log_twitch_event(
+                twitch_username=username,
+                event_type="STARTUP_OFFLINE",
+                message="Detected offline during monitor startup.",
+                raw_payload=data,
+            )
 
         startup_summary.append(
             f"{'🔴' if is_live else '⚫'} {username} - {'LIVE' if is_live else 'OFFLINE'}"
         )
-
         return
 
     state = stream_state[username]
 
+    # Get the current stream information
+    stream = data["data"][0] if is_live else None
+
+    # Determine what happened since the previous check
+    event = get_stream_event(state, stream)
 
     # Went live
-    if is_live and not state["live"]:
-
-        stream = data["data"][0]
-
+    if event == "LIVE":
         state["live"] = True
         state["title"] = stream["title"]
         state["game"] = stream["game_name"]
-        
+
         message = ""
 
-        message += f"🔴 <b>{stream['user_name']}</b> is now <b>LIVE!</b>\n\n"
-        message += f"🎮 {stream['game_name']}\n"
-        message += f"📝 {stream['title']}\n\n"
+        message += f"🔴 <b>{escape(stream['user_name'])}</b> is now <b>LIVE!</b>\n\n"
+        message += f"🎮 {escape(stream['game_name'])}\n"
+        message += f"📝 {escape(stream['title'])}\n\n"
         message += f"https://twitch.tv/{stream['user_login']}"
-        await bot.send_message(STREAM_LOG_CHAT_ID, message, parse_mode="HTML")
 
-        print(f"[TWITCH] {username} went LIVE.")
+        await log_twitch_event(
+            twitch_username=username,
+            event_type="LIVE",
+            twitch_display_name=stream["user_name"],
+            stream_id=stream.get("id"),
+            title=stream["title"],
+            game_name=stream["game_name"],
+            message=message,
+            raw_payload=stream,
+        )
+
+        await bot.send_message(
+            STREAM_LOG_CHAT_ID,
+            message,
+            parse_mode="HTML",
+        )
+
+        logger.info("[TWITCH] %s went LIVE.", username)
 
     # Went offline
-    elif not is_live and state["live"]:
+    elif event == "OFFLINE":
+        old_title = state["title"]
+        old_game = state["game"]
 
         state["live"] = False
         state["title"] = None
@@ -123,36 +202,48 @@ async def check_streamer(streamer, bot):
 
         message = ""
 
-        message += f"⚫ <b>{username}</b> is now OFFLINE!"
+        message += f"⚫ <b>{escape(username)}</b> is now OFFLINE!"
 
-        await bot.send_message(STREAM_LOG_CHAT_ID, message, parse_mode="HTML")
+        await log_twitch_event(
+            twitch_username=username,
+            event_type="OFFLINE",
+            old_title=old_title,
+            old_game_name=old_game,
+            message=message,
+            raw_payload=data,
+        )
 
-        print(f"[TWITCH] {username} went OFFLINE.")
+        await bot.send_message(
+            STREAM_LOG_CHAT_ID,
+            message,
+            parse_mode="HTML",
+        )
 
-    elif is_live and state["live"]:
+        logger.info("[TWITCH] %s went OFFLINE.", username)
 
-        stream = data["data"][0]
-
+    # Stream title or game changed
+    elif event == "STREAM_UPDATE":
         changes = []
+        old_title = state["title"]
+        old_game = state["game"]
 
         if stream["title"] != state["title"]:
             change = ""
 
             change += f"📝 <b>Title</b>\n"
-            change += f"<b>Old:</b> {state['title']}\n"
-            change += f"<b>New:</b> {stream['title']}"
+            change += f"<b>Old:</b> {escape(state['title'])}\n"
+            change += f"<b>New:</b> {escape(stream['title'])}"
 
             changes.append(change)
 
             state["title"] = stream["title"]
 
         if stream["game_name"] != state["game"]:
-
             change = ""
-            
+
             change += f"📝 <b>Game</b>\n"
-            change += f"<b>Old:</b> {state['game']}\n"
-            change += f"<b>New:</b> {stream['game_name']}"
+            change += f"<b>Old:</b> {escape(state['game'])}\n"
+            change += f"<b>New:</b> {escape(stream['game_name'])}"
 
             changes.append(change)
 
@@ -160,55 +251,107 @@ async def check_streamer(streamer, bot):
 
         if changes:
             message = ""
-            message += f"🔄 <b>{stream['user_name']}</b> updated their stream!\n\n"
+
+            message += (
+                f"🔄 <b>{escape(stream['user_name'])}</b> updated their stream!\n\n"
+            )
+
             message += "\n\n".join(changes)
 
-            await bot.send_message(STREAM_LOG_CHAT_ID, message, parse_mode="HTML")
+            await log_twitch_event(
+                twitch_username=username,
+                event_type="STREAM_UPDATE",
+                twitch_display_name=stream["user_name"],
+                stream_id=stream.get("id"),
+                title=stream["title"],
+                game_name=stream["game_name"],
+                old_title=old_title,
+                old_game_name=old_game,
+                message=message,
+                raw_payload=stream,
+            )
+
+            await bot.send_message(
+                STREAM_LOG_CHAT_ID,
+                message,
+                parse_mode="HTML",
+            )
+
+            logger.info("[TWITCH] %s updated their stream.", username)
 
 
 async def check_all(bot):
 
     for streamer in TWITCH_STREAMERS:
-
         try:
-
             await check_streamer(streamer, bot)
-
-        except Exception as e:
-
-            if str(e) == "TOKEN_EXPIRED":
-
+        except TwitchTokenExpiredError:
+            logger.warning("[TWITCH] Access token expired. Refreshing token...")
+            try:
                 await get_access_token()
-
                 await check_streamer(streamer, bot)
 
-            else:
-
-                print(e)
+            except Exception:
+                logger.exception(
+                    "[TWITCH] Failed to refresh token or retry %s", streamer["username"]
+                )
+        except Exception:
+            logger.exception("[TWITCH] Error checking %s", streamer["username"])
 
 
 async def start_twitch_monitor(bot):
-
-    print("[TWITCH] Starting Twitch monitor...");
+    logger.info("[TWITCH] Starting Twitch monitor...")
 
     global session
-
     session = aiohttp.ClientSession()
 
-    await get_access_token()
+    try:
+        while True:
+            try:
+                # Get a Twitch access token if we don't have one
+                if access_token is None:
+                    await get_access_token()
 
-    await check_all(bot)
-    
-    message = ""
-    message += "🎮 <b>Twitch Monitor Started</b>\n\n"
-    message += "\n".join(startup_summary)
+                # Check all streamers
+                await check_all(bot)
 
-    await bot.send_message(STREAM_LOG_CHAT_ID, message, parse_mode="HTML")
+                # Send startup message only once
+                if startup_summary:
+                    message = ""
+                    message += "🎮 <b>Twitch Monitor Started</b>\n\n"
+                    message += "\n".join(startup_summary)
 
-    startup_summary.clear()
+                    await bot.send_message(
+                        STREAM_LOG_CHAT_ID,
+                        message,
+                        parse_mode="HTML",
+                    )
 
-    while True:
+                    startup_summary.clear()
 
-        await asyncio.sleep(60)
+                # Normal monitoring interval
+                await asyncio.sleep(60)
 
-        await check_all(bot)
+            except asyncio.CancelledError:
+                raise
+
+            except Exception:
+                logger.exception(
+                    "[TWITCH] Error in monitoring cycle. " "Retrying in 60 seconds..."
+                )
+
+                await asyncio.sleep(60)
+
+    except asyncio.CancelledError:
+        logger.info("[TWITCH] Monitor shutting down")
+        await bot.send_message(
+            STREAM_LOG_CHAT_ID,
+            "[TWITCH] Monitor shutting down",
+        )
+        raise
+
+    finally:
+        if session is not None:
+            await session.close()
+
+        session = None
