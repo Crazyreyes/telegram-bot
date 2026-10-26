@@ -7,7 +7,6 @@ import pytest
 import twitch_monitor
 from twitch_monitor import get_stream_event
 
-
 def test_offline_to_offline():
     previous_state = {
         "live": False,
@@ -231,10 +230,10 @@ async def test_check_streamer_goes_live(monkeypatch):
 
     assert logged_events[0]["event_type"] == "LIVE"
 
-    assert sent_messages[0][0][0] == twitch_monitor.STREAM_LOG_CHAT_ID
+    assert sent_messages[0][1]["chat_id"] == twitch_monitor.STREAM_LOG_CHAT_ID
 
-    assert "TestStreamer" in sent_messages[0][0][1]
-    assert "LIVE" in sent_messages[0][0][1]
+    assert "TestStreamer" in sent_messages[0][1]["text"]
+    assert "LIVE" in sent_messages[0][1]["text"]
 
 
 @pytest.mark.asyncio
@@ -294,11 +293,11 @@ async def test_check_streamer_goes_offline(monkeypatch):
 
     assert logged_events[0]["old_game_name"] == "Just Chatting"
 
-    assert sent_messages[0][0][0] == twitch_monitor.STREAM_LOG_CHAT_ID
+    assert sent_messages[0][1]["chat_id"] == twitch_monitor.STREAM_LOG_CHAT_ID
 
-    assert "TestStreamer" not in sent_messages[0][0][1]
+    assert "TestStreamer" not in sent_messages[0][1]["text"]
 
-    assert "OFFLINE" in sent_messages[0][0][1]
+    assert "OFFLINE" in sent_messages[0][1]["text"]
 
 
 @pytest.mark.asyncio
@@ -369,11 +368,11 @@ async def test_check_streamer_title_update(monkeypatch):
 
     assert logged_events[0]["old_game_name"] == "Just Chatting"
 
-    assert sent_messages[0][0][0] == twitch_monitor.STREAM_LOG_CHAT_ID
+    assert sent_messages[0][1]["chat_id"] == twitch_monitor.STREAM_LOG_CHAT_ID
 
-    assert "New stream title" in sent_messages[0][0][1]
+    assert "New stream title" in sent_messages[0][1]["text"]
 
-    assert "Old stream title" in sent_messages[0][0][1]
+    assert "Old stream title" in sent_messages[0][1]["text"]
 
 
 @pytest.mark.asyncio
@@ -444,11 +443,11 @@ async def test_check_streamer_game_update(monkeypatch):
 
     assert logged_events[0]["old_game_name"] == "Minecraft"
 
-    assert sent_messages[0][0][0] == twitch_monitor.STREAM_LOG_CHAT_ID
+    assert sent_messages[0][1]["chat_id"] == twitch_monitor.STREAM_LOG_CHAT_ID
 
-    assert "Minecraft" in sent_messages[0][0][1]
+    assert "Minecraft" in sent_messages[0][1]["text"]
 
-    assert "Fortnite" in sent_messages[0][0][1]
+    assert "Fortnite" in sent_messages[0][1]["text"]
 
 
 @pytest.mark.asyncio
@@ -523,9 +522,9 @@ async def test_check_streamer_title_and_game_update(monkeypatch):
 
     assert logged_events[0]["game_name"] == "Fortnite"
 
-    assert sent_messages[0][0][0] == twitch_monitor.STREAM_LOG_CHAT_ID
+    assert sent_messages[0][1]["chat_id"] == twitch_monitor.STREAM_LOG_CHAT_ID
 
-    message = sent_messages[0][0][1]
+    message = sent_messages[0][1]["text"]
 
     assert "Old title" in message
     assert "New title" in message

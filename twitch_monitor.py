@@ -6,6 +6,8 @@ from html import escape
 
 from config import STREAM_LOG_CHAT_ID, TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET
 from db import log_twitch_event
+from telegram_utils import send_message_with_retry
+from telegram.constants import ParseMode
 
 logger = logging.getLogger(__name__)
 
@@ -118,11 +120,7 @@ async def check_streamer(streamer, bot):
     if username not in stream_state:
         if is_live:
             stream = data["data"][0]
-            stream_state[username] = {
-                "live": True,
-                "title": stream["title"],
-                "game": stream["game_name"],
-            }
+
             await log_twitch_event(
                 twitch_username=username,
                 event_type="STARTUP_LIVE",
@@ -133,18 +131,25 @@ async def check_streamer(streamer, bot):
                 message="Detected live during monitor startup.",
                 raw_payload=stream,
             )
-        else:
             stream_state[username] = {
-                "live": False,
-                "title": None,
-                "game": None,
+                "live": True,
+                "title": stream["title"],
+                "game": stream["game_name"],
             }
+        else:
+
             await log_twitch_event(
                 twitch_username=username,
                 event_type="STARTUP_OFFLINE",
                 message="Detected offline during monitor startup.",
                 raw_payload=data,
             )
+
+            stream_state[username] = {
+                "live": False,
+                "title": None,
+                "game": None,
+            }
 
         startup_summary.append(
             f"{'🔴' if is_live else '⚫'} {username} - {'LIVE' if is_live else 'OFFLINE'}"
@@ -161,10 +166,6 @@ async def check_streamer(streamer, bot):
 
     # Went live
     if event == "LIVE":
-        state["live"] = True
-        state["title"] = stream["title"]
-        state["game"] = stream["game_name"]
-
         message = ""
 
         message += f"🔴 <b>{escape(stream['user_name'])}</b> is now <b>LIVE!</b>\n\n"
@@ -183,10 +184,15 @@ async def check_streamer(streamer, bot):
             raw_payload=stream,
         )
 
-        await bot.send_message(
-            STREAM_LOG_CHAT_ID,
-            message,
-            parse_mode="HTML",
+        state["live"] = True
+        state["title"] = stream["title"]
+        state["game"] = stream["game_name"]
+
+        await send_message_with_retry(
+            bot,
+            chat_id=STREAM_LOG_CHAT_ID,
+            text=message,
+            parse_mode=ParseMode.HTML,
         )
 
         logger.info("[TWITCH] %s went LIVE.", username)
@@ -195,10 +201,6 @@ async def check_streamer(streamer, bot):
     elif event == "OFFLINE":
         old_title = state["title"]
         old_game = state["game"]
-
-        state["live"] = False
-        state["title"] = None
-        state["game"] = None
 
         message = ""
 
@@ -213,10 +215,15 @@ async def check_streamer(streamer, bot):
             raw_payload=data,
         )
 
-        await bot.send_message(
-            STREAM_LOG_CHAT_ID,
-            message,
-            parse_mode="HTML",
+        state["live"] = False
+        state["title"] = None
+        state["game"] = None
+
+        await send_message_with_retry(
+            bot,
+            chat_id=STREAM_LOG_CHAT_ID,
+            text=message,
+            parse_mode=ParseMode.HTML,
         )
 
         logger.info("[TWITCH] %s went OFFLINE.", username)
@@ -236,8 +243,6 @@ async def check_streamer(streamer, bot):
 
             changes.append(change)
 
-            state["title"] = stream["title"]
-
         if stream["game_name"] != state["game"]:
             change = ""
 
@@ -246,8 +251,6 @@ async def check_streamer(streamer, bot):
             change += f"<b>New:</b> {escape(stream['game_name'])}"
 
             changes.append(change)
-
-            state["game"] = stream["game_name"]
 
         if changes:
             message = ""
@@ -271,10 +274,17 @@ async def check_streamer(streamer, bot):
                 raw_payload=stream,
             )
 
-            await bot.send_message(
-                STREAM_LOG_CHAT_ID,
-                message,
-                parse_mode="HTML",
+            if stream["title"] != state["title"]:
+                state["title"] = stream["title"]
+
+            if stream["game_name"] != state["game"]:
+                state["game"] = stream["game_name"]
+
+            await send_message_with_retry(
+                bot,
+                chat_id=STREAM_LOG_CHAT_ID,
+                text=message,
+                parse_mode=ParseMode.HTML,
             )
 
             logger.info("[TWITCH] %s updated their stream.", username)
@@ -321,10 +331,11 @@ async def start_twitch_monitor(bot):
                     message += "🎮 <b>Twitch Monitor Started</b>\n\n"
                     message += "\n".join(startup_summary)
 
-                    await bot.send_message(
-                        STREAM_LOG_CHAT_ID,
-                        message,
-                        parse_mode="HTML",
+                    await send_message_with_retry(
+                        bot,
+                        chat_id=STREAM_LOG_CHAT_ID,
+                        text=message,
+                        parse_mode=ParseMode.HTML,
                     )
 
                     startup_summary.clear()
@@ -344,9 +355,11 @@ async def start_twitch_monitor(bot):
 
     except asyncio.CancelledError:
         logger.info("[TWITCH] Monitor shutting down")
-        await bot.send_message(
-            STREAM_LOG_CHAT_ID,
-            "[TWITCH] Monitor shutting down",
+
+        await send_message_with_retry(
+            bot,
+            chat_id=STREAM_LOG_CHAT_ID,
+            text="[TWITCH] Monitor shutting down",
         )
         raise
 
