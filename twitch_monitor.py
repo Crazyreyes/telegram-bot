@@ -4,7 +4,12 @@ import logging
 import aiohttp
 from html import escape
 
-from config import STREAM_LOG_CHAT_ID, TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET
+from config import (
+    STREAM_LOG_CHAT_ID,
+    TWITCH_CLIENT_ID,
+    TWITCH_CLIENT_SECRET,
+    TWITCH_STREAMERS,
+)
 from db import log_twitch_event
 from telegram_utils import send_message_with_retry
 from telegram.constants import ParseMode
@@ -15,11 +20,6 @@ logger = logging.getLogger(__name__)
 class TwitchTokenExpiredError(Exception):
     pass
 
-
-TWITCH_STREAMERS = [
-    {"username": "streamer_one"},
-    {"username": "streamer_two"},
-]
 
 access_token = None
 startup_summary = []

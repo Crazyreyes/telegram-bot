@@ -1,12 +1,12 @@
 import asyncio
-import os
 import logging
+import os
 from logging.handlers import RotatingFileHandler
 
-from telegram.ext import Application, MessageHandler, filters
+from telegram.ext import Application
 from telegram.error import NetworkError
 
-from config import BOT_TOKEN, STREAM_LOG_CHAT_ID
+from config import BOT_TOKEN, DUMP_CHAT_ID
 from db import close_db, init_db
 from telegram_utils import send_message_with_retry
 from twitch_monitor import start_twitch_monitor
@@ -21,7 +21,7 @@ logging.basicConfig(
         RotatingFileHandler(
             "logs/bot.log",
             maxBytes=5 * 1024 * 1024,
-            backupCount=100,
+            backupCount=10,
             encoding="utf-8",
         ),
     ],
@@ -54,18 +54,6 @@ async def error_handler(update, context):
     )
 
 
-# Logs every message the bot receives
-async def log_messages(update, context):
-    chat = update.effective_chat
-    print("=" * 40)
-    print(f"Chat ID: {chat.id}")
-    print(f"Chat Type: {chat.type}")
-    print(f"Chat Title: {chat.title}")
-    print(f"Username: {chat.username}")
-    if update.message:
-        print(f"Message: {update.message.text}")
-
-
 async def post_init(application):
     await init_db()
 
@@ -74,7 +62,7 @@ async def post_init(application):
     logger.info("Reez Bot is up and ready to go!")
     await send_message_with_retry(
         application.bot,
-        chat_id=STREAM_LOG_CHAT_ID,
+        chat_id=DUMP_CHAT_ID,
         text="Reez Bot just started up!",
     )
     twitch_task = asyncio.create_task(start_twitch_monitor(application.bot))
@@ -96,9 +84,9 @@ async def post_stop(application):
 
 
 # Register the handler
-app.add_handler(MessageHandler(filters.ALL, log_messages))
 app.add_error_handler(error_handler)
 app.post_init = post_init
 app.post_stop = post_stop
 
-app.run_polling()
+if __name__ == "__main__":
+    app.run_polling()

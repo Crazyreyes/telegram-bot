@@ -6,8 +6,13 @@ Automated tests are stored in:
 
 ```text
 tests/
+├── conftest.py
+├── test_telegram_utils.py
 └── test_twitch_monitor.py
 ```
+
+`conftest.py` sets dummy values for every required environment variable, so
+the tests run with no real credentials configured.
 
 ## Running Tests
 
@@ -21,11 +26,12 @@ A successful test run should look similar to:
 
 ```text
 ============================= test session starts =============================
-collected 20 items
+collected 26 items
 
-tests\test_twitch_monitor.py ....................                            [100%]
+tests\test_telegram_utils.py ......                                      [ 23%]
+tests\test_twitch_monitor.py ....................                        [100%]
 
-============================== 20 passed ======================================
+============================== 26 passed ======================================
 ```
 
 ## Twitch Monitor Tests
@@ -67,6 +73,18 @@ Tests verify:
 * failure while refreshing an expired token
 * handling requests before the Twitch session is initialized
 
+## Telegram Utilities Tests
+
+The message-sending helper in `telegram_utils.py` has its own test suite,
+covering:
+
+* retrying after a network error, then succeeding
+* waiting out a Telegram rate limit before retrying
+* passing the HTML parse mode through correctly
+* not retrying a rejected (`BadRequest`) message
+* giving up and returning `None` once retries are exhausted
+* retrying timeouts with the configured timeout values
+
 ## Automated Tests vs Live Testing
 
 The automated tests use mocked Twitch API responses and do not require the real Twitch API.
@@ -91,13 +109,15 @@ The current automated test suite does **not** replace live testing.
 
 ## Current Test Status
 
-The Twitch monitoring test suite currently contains:
+The automated test suite currently contains:
 
 ```text
-20 tests
-20 passed
+26 tests
+26 passed
 0 failed
 ```
+
+20 tests cover the Twitch monitor and 6 cover the Telegram utilities.
 
 Tests should be run after significant changes to the Twitch monitoring code.
 

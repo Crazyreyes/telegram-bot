@@ -6,12 +6,9 @@ Reez Bot continuously monitors configured Twitch channels and sends relevant str
 
 The bot uses the Twitch API to periodically check whether each configured streamer is live.
 
-The current monitor checks:
-
-```text
-streamer_one
-streamer_two
-```
+The monitored channels are set with the `TWITCH_STREAMERS` environment
+variable, so the channel names are never written in the code. See
+[Adding Streamers](#adding-streamers).
 
 The monitor checks the channels every **60 seconds**.
 
@@ -177,25 +174,18 @@ If the Twitch token expires, the monitor automatically requests a new token and 
 
 ## Adding Streamers
 
-The currently monitored streamers are configured in:
-
-```text
-twitch_monitor.py
-```
-
-The streamer list is defined by the `TWITCH_STREAMERS` variable.
-
-To monitor another Twitch account, add its Twitch username to the list.
+The monitored streamers are configured with the `TWITCH_STREAMERS`
+environment variable: a comma-separated list of Twitch usernames.
 
 Example:
 
-```python
-TWITCH_STREAMERS = [
-    {"username": "streamer_one"},
-    {"username": "streamer_two"},
-    {"username": "another_streamer"},
-]
+```env
+TWITCH_STREAMERS=streamer_one,streamer_two,another_streamer
 ```
+
+To monitor another Twitch account, add its username to the list and restart
+the bot. The names are kept in configuration so they are never committed to
+the repository.
 
 ## Testing
 
@@ -215,4 +205,4 @@ pytest
 
 The test suite covers stream state changes, Twitch API responses, token expiration, token refresh, error handling, and stream updates.
 
-See the [Testing documentation](testing.md) for more information.
+See the [Testing documentation](test.md) for more information.
