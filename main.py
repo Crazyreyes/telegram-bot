@@ -8,6 +8,7 @@ from telegram.error import NetworkError
 
 from config import BOT_TOKEN, DUMP_CHAT_ID
 from db import close_db, init_db
+from outbox_worker import run_outbox_worker
 from telegram_utils import send_message_with_retry
 from twitch_monitor import start_twitch_monitor
 
@@ -68,17 +69,24 @@ async def post_init(application):
     twitch_task = asyncio.create_task(start_twitch_monitor(application.bot))
     application.bot_data["twitch_task"] = twitch_task
 
+    outbox_task = asyncio.create_task(run_outbox_worker(application.bot))
+    application.bot_data["outbox_task"] = outbox_task
+
 
 async def post_stop(application):
-    twitch_task = application.bot_data.get("twitch_task")
+    for key, label in (
+        ("twitch_task", "[TWITCH] Monitor stopped"),
+        ("outbox_task", "[OUTBOX] Worker stopped"),
+    ):
+        task = application.bot_data.get(key)
 
-    if twitch_task:
-        twitch_task.cancel()
+        if task:
+            task.cancel()
 
-        try:
-            await twitch_task
-        except asyncio.CancelledError:
-            logger.info("[TWITCH] Monitor stopped")
+            try:
+                await task
+            except asyncio.CancelledError:
+                logger.info(label)
 
     await close_db()
 

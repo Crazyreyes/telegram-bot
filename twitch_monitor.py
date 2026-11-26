@@ -191,13 +191,6 @@ async def check_streamer(streamer, bot):
         state["title"] = stream["title"]
         state["game"] = stream["game_name"]
 
-        await send_message_with_retry(
-            bot,
-            chat_id=STREAM_LOG_CHAT_ID,
-            text=message,
-            parse_mode=ParseMode.HTML,
-        )
-
         logger.info("[TWITCH] %s went LIVE.", username)
 
     # Went offline
@@ -218,18 +211,12 @@ async def check_streamer(streamer, bot):
             raw_payload=data,
             notify_chat_id=STREAM_LOG_CHAT_ID,
             notify_message=message,
+            notify_parse_mode=ParseMode.HTML.value,
         )
 
         state["live"] = False
         state["title"] = None
         state["game"] = None
-
-        await send_message_with_retry(
-            bot,
-            chat_id=STREAM_LOG_CHAT_ID,
-            text=message,
-            parse_mode=ParseMode.HTML,
-        )
 
         logger.info("[TWITCH] %s went OFFLINE.", username)
 
@@ -287,13 +274,6 @@ async def check_streamer(streamer, bot):
 
             if stream["game_name"] != state["game"]:
                 state["game"] = stream["game_name"]
-
-            await send_message_with_retry(
-                bot,
-                chat_id=STREAM_LOG_CHAT_ID,
-                text=message,
-                parse_mode=ParseMode.HTML,
-            )
 
             logger.info("[TWITCH] %s updated their stream.", username)
 

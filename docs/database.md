@@ -55,7 +55,7 @@ The table also stores previous title/game values when relevant and the raw Twitc
 
 ### `outbox`
 
-Stores queued stream notifications that the worker will send.
+Stores queued stream notifications that the worker sends.
 
 Each row holds everything the worker needs to send the message later: the
 `twitch_events` row it belongs to (`twitch_event_id`), the target chat
@@ -71,9 +71,33 @@ Status bookkeeping for the worker:
 - `created_at` / `sent_at` — when the row was queued and when it was sent.
 
 The event row and its outbox row are written in a single database
-transaction, so either both are saved or neither is. The outbox only queues
-for now: the bot still sends stream notifications directly, and the worker
-that reads `pending` rows is a later step.
+transaction, so either both are saved or neither is. If that write hits a
+transient database error (e.g. a command timeout), it is retried up to 3
+times with a 1s then 2s pause before giving up.
+
+### The outbox worker
+
+`outbox_worker.py` runs as a background task alongside the monitor
+(started in `main.py`). Every 10 seconds it claims due `pending` rows and
+sends them with `send_message_with_retry()`.
+
+Claiming is a single atomic `UPDATE ... RETURNING`: it picks the oldest due
+rows and pushes their `next_attempt_at` into the future, which acts as a
+lease. A second worker cannot claim the same rows, and if a worker crashes
+mid-send the lease simply expires and the rows become claimable again. No
+separate `sending` status is needed.
+
+On a successful send the row is marked `sent` with a timestamp. On a
+failure the worker records the error, bumps `attempts`, and schedules the
+next try with exponential backoff (60s, 120s, 240s, 480s, capped at 1
+hour). After 5 attempts the row is marked `failed` and kept for inspection
+instead of being retried forever. Sent rows older than 30 days are deleted
+by the worker (checked roughly once an hour).
+
+The outbox is the only send path for stream notifications: the monitor
+queues them and never sends directly. The monitor's startup summary and
+shutdown notice are still sent directly, since they are not stream events
+and have no outbox row.
 
 ## Environment Variables
 

@@ -236,14 +236,13 @@ async def test_check_streamer_goes_live(monkeypatch):
 
     assert logged_events[0]["notify_chat_id"] == twitch_monitor.STREAM_LOG_CHAT_ID
 
-    assert logged_events[0]["notify_message"] == sent_messages[0][1]["text"]
-
     assert logged_events[0]["notify_parse_mode"] == "HTML"
 
-    assert sent_messages[0][1]["chat_id"] == twitch_monitor.STREAM_LOG_CHAT_ID
+    # The notification is queued for the worker; nothing is sent directly.
+    assert sent_messages == []
 
-    assert "TestStreamer" in sent_messages[0][1]["text"]
-    assert "LIVE" in sent_messages[0][1]["text"]
+    assert "TestStreamer" in logged_events[0]["notify_message"]
+    assert "LIVE" in logged_events[0]["notify_message"]
 
 
 @pytest.mark.asyncio
@@ -305,16 +304,15 @@ async def test_check_streamer_goes_offline(monkeypatch):
 
     assert logged_events[0]["notify_chat_id"] == twitch_monitor.STREAM_LOG_CHAT_ID
 
-    assert logged_events[0]["notify_message"] == sent_messages[0][1]["text"]
+    # The offline message uses <b> tags, so HTML is queued like the others.
+    assert logged_events[0]["notify_parse_mode"] == "HTML"
 
-    # The offline message is plain text, so no parse mode is queued.
-    assert logged_events[0].get("notify_parse_mode") is None
+    # The notification is queued for the worker; nothing is sent directly.
+    assert sent_messages == []
 
-    assert sent_messages[0][1]["chat_id"] == twitch_monitor.STREAM_LOG_CHAT_ID
+    assert "TestStreamer" not in logged_events[0]["notify_message"]
 
-    assert "TestStreamer" not in sent_messages[0][1]["text"]
-
-    assert "OFFLINE" in sent_messages[0][1]["text"]
+    assert "OFFLINE" in logged_events[0]["notify_message"]
 
 
 @pytest.mark.asyncio
@@ -387,15 +385,14 @@ async def test_check_streamer_title_update(monkeypatch):
 
     assert logged_events[0]["notify_chat_id"] == twitch_monitor.STREAM_LOG_CHAT_ID
 
-    assert logged_events[0]["notify_message"] == sent_messages[0][1]["text"]
-
     assert logged_events[0]["notify_parse_mode"] == "HTML"
 
-    assert sent_messages[0][1]["chat_id"] == twitch_monitor.STREAM_LOG_CHAT_ID
+    # The notification is queued for the worker; nothing is sent directly.
+    assert sent_messages == []
 
-    assert "New stream title" in sent_messages[0][1]["text"]
+    assert "New stream title" in logged_events[0]["notify_message"]
 
-    assert "Old stream title" in sent_messages[0][1]["text"]
+    assert "Old stream title" in logged_events[0]["notify_message"]
 
 
 @pytest.mark.asyncio
@@ -466,11 +463,16 @@ async def test_check_streamer_game_update(monkeypatch):
 
     assert logged_events[0]["old_game_name"] == "Minecraft"
 
-    assert sent_messages[0][1]["chat_id"] == twitch_monitor.STREAM_LOG_CHAT_ID
+    assert logged_events[0]["notify_chat_id"] == twitch_monitor.STREAM_LOG_CHAT_ID
 
-    assert "Minecraft" in sent_messages[0][1]["text"]
+    assert logged_events[0]["notify_parse_mode"] == "HTML"
 
-    assert "Fortnite" in sent_messages[0][1]["text"]
+    # The notification is queued for the worker; nothing is sent directly.
+    assert sent_messages == []
+
+    assert "Minecraft" in logged_events[0]["notify_message"]
+
+    assert "Fortnite" in logged_events[0]["notify_message"]
 
 
 @pytest.mark.asyncio
@@ -545,9 +547,14 @@ async def test_check_streamer_title_and_game_update(monkeypatch):
 
     assert logged_events[0]["game_name"] == "Fortnite"
 
-    assert sent_messages[0][1]["chat_id"] == twitch_monitor.STREAM_LOG_CHAT_ID
+    assert logged_events[0]["notify_chat_id"] == twitch_monitor.STREAM_LOG_CHAT_ID
 
-    message = sent_messages[0][1]["text"]
+    assert logged_events[0]["notify_parse_mode"] == "HTML"
+
+    # The notification is queued for the worker; nothing is sent directly.
+    assert sent_messages == []
+
+    message = logged_events[0]["notify_message"]
 
     assert "Old title" in message
     assert "New title" in message
