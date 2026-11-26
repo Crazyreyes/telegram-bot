@@ -19,7 +19,9 @@ async def send_message_with_retry(
 
     - Timeout/network error: retry with exponential backoff.
     - Telegram rate limit: wait for Telegram's specified delay.
-    - Other Telegram errors: log the failure without retrying.
+    - Other Telegram errors: raised to the caller (permanent).
+
+    Returns the sent message, or None if transient retries run out.
     """
 
     timeout_kwargs = {
@@ -80,7 +82,7 @@ async def send_message_with_retry(
                 chat_id,
                 exc,
             )
-            return None
+            raise
 
         except NetworkError as exc:
             if attempt == max_attempts:
@@ -113,6 +115,6 @@ async def send_message_with_retry(
                 "Telegram rejected the message (chat_id=%s).",
                 chat_id,
             )
-            return None
+            raise
 
     return None

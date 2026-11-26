@@ -5,6 +5,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
 from telegram.constants import ParseMode
+from telegram.error import BadRequest
 
 import db
 import outbox_worker
@@ -84,6 +85,40 @@ async def test_process_row_without_parse_mode(monkeypatch):
 
     assert sent_calls == [None]
     assert marked_sent == [7]
+
+
+@pytest.mark.asyncio
+async def test_process_row_permanent_error_marks_failed_at_once(monkeypatch):
+    row = make_row()
+    send_calls = []
+    retried = []
+    marked_failed = []
+
+    async def fake_send(bot, chat_id, text, parse_mode=None, **kwargs):
+        send_calls.append(text)
+        raise BadRequest("Can't parse entities")
+
+    async def fake_schedule(row_id, *, attempts, error, backoff_seconds):
+        retried.append(row_id)
+
+    async def fake_mark_failed(row_id, *, attempts, error):
+        marked_failed.append(
+            {"row_id": row_id, "attempts": attempts, "error": error}
+        )
+
+    monkeypatch.setattr(outbox_worker, "send_message_with_retry", fake_send)
+    monkeypatch.setattr(db, "schedule_outbox_retry", fake_schedule)
+    monkeypatch.setattr(db, "mark_outbox_failed", fake_mark_failed)
+
+    await outbox_worker.process_row(object(), row)
+
+    # Sent once, then given up on: no retry scheduled.
+    assert len(send_calls) == 1
+    assert retried == []
+    assert len(marked_failed) == 1
+    assert marked_failed[0]["row_id"] == 7
+    assert marked_failed[0]["attempts"] == 1
+    assert "Can't parse entities" in marked_failed[0]["error"]
 
 
 @pytest.mark.asyncio

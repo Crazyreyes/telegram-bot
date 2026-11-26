@@ -2,6 +2,7 @@ import asyncio
 import logging
 
 from telegram.constants import ParseMode
+from telegram.error import TelegramError
 
 import db
 from telegram_utils import send_message_with_retry
@@ -39,6 +40,10 @@ async def process_row(bot, row) -> None:
             text=row["message_text"],
             parse_mode=parse_mode,
         )
+    except TelegramError as exc:
+        # Telegram rejected the message itself; retrying will not help.
+        await _record_failure(row, str(exc), permanent=True)
+        return
     except Exception as exc:
         # One bad row must never take the worker down.
         logger.exception("[OUTBOX] Unexpected error sending row %s", row_id)
@@ -56,11 +61,12 @@ async def process_row(bot, row) -> None:
     )
 
 
-async def _record_failure(row, error: str) -> None:
-    """Schedule a retry for a failed row, or give up after MAX_ATTEMPTS."""
+async def _record_failure(row, error: str, permanent: bool = False) -> None:
+    """Schedule a retry for a failed row, or give up after MAX_ATTEMPTS
+    or on a permanent error."""
     attempts = row["attempts"] + 1
 
-    if attempts >= MAX_ATTEMPTS:
+    if permanent or attempts >= MAX_ATTEMPTS:
         await db.mark_outbox_failed(row["id"], attempts=attempts, error=error)
         logger.warning(
             "[OUTBOX] Giving up on queued notification (outbox_id=%s) "

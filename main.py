@@ -4,7 +4,7 @@ import os
 from logging.handlers import RotatingFileHandler
 
 from telegram.ext import Application
-from telegram.error import NetworkError
+from telegram.error import NetworkError, TelegramError
 
 from config import BOT_TOKEN, DUMP_CHAT_ID
 from db import close_db, init_db
@@ -61,11 +61,15 @@ async def post_init(application):
     me = await application.bot.get_me()
     application.bot_data["username"] = me.username
     logger.info("Reez Bot is up and ready to go!")
-    await send_message_with_retry(
-        application.bot,
-        chat_id=DUMP_CHAT_ID,
-        text="Reez Bot just started up!",
-    )
+    try:
+        await send_message_with_retry(
+            application.bot,
+            chat_id=DUMP_CHAT_ID,
+            text="Reez Bot just started up!",
+        )
+    except TelegramError:
+        # A rejected startup notice must not stop the bot starting.
+        logger.exception("Startup notice rejected.")
     twitch_task = asyncio.create_task(start_twitch_monitor(application.bot))
     application.bot_data["twitch_task"] = twitch_task
 

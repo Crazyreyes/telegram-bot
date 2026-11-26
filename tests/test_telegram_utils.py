@@ -10,7 +10,7 @@ import pytest
 
 import telegram_utils
 from telegram.constants import ParseMode
-from telegram.error import BadRequest, NetworkError, RetryAfter, TimedOut
+from telegram.error import BadRequest, NetworkError, RetryAfter, TimedOut, Forbidden
 
 
 @pytest.mark.asyncio
@@ -107,8 +107,8 @@ async def test_html_parse_mode_is_passed_correctly():
 
 
 @pytest.mark.asyncio
-async def test_bad_request_does_not_retry(monkeypatch):
-    """Do not retry invalid messages or other BadRequest errors."""
+async def test_bad_request_raises_without_retrying(monkeypatch):
+    """Raise invalid messages instead of returning None for them."""
 
     bot = SimpleNamespace(
         send_message=AsyncMock(side_effect=BadRequest("Can't parse entities"))
@@ -117,14 +117,36 @@ async def test_bad_request_does_not_retry(monkeypatch):
     sleep_mock = AsyncMock()
     monkeypatch.setattr(telegram_utils.asyncio, "sleep", sleep_mock)
 
-    result = await telegram_utils.send_message_with_retry(
-        bot,
-        chat_id=12345,
-        text="<b>Invalid HTML",
-        parse_mode=ParseMode.HTML,
+    with pytest.raises(BadRequest):
+        await telegram_utils.send_message_with_retry(
+            bot,
+            chat_id=12345,
+            text="<b>Invalid HTML",
+            parse_mode=ParseMode.HTML,
+        )
+
+    bot.send_message.assert_awaited_once()
+    sleep_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_other_telegram_error_raises_without_retrying(monkeypatch):
+    """Raise other permanent Telegram errors (e.g. Forbidden)."""
+
+    bot = SimpleNamespace(
+        send_message=AsyncMock(side_effect=Forbidden("Bot was blocked"))
     )
 
-    assert result is None
+    sleep_mock = AsyncMock()
+    monkeypatch.setattr(telegram_utils.asyncio, "sleep", sleep_mock)
+
+    with pytest.raises(Forbidden):
+        await telegram_utils.send_message_with_retry(
+            bot,
+            chat_id=12345,
+            text="Test notification",
+        )
+
     bot.send_message.assert_awaited_once()
     sleep_mock.assert_not_awaited()
 

@@ -91,7 +91,9 @@ On a successful send the row is marked `sent` with a timestamp. On a
 failure the worker records the error, bumps `attempts`, and schedules the
 next try with exponential backoff (60s, 120s, 240s, 480s, capped at 1
 hour). After 5 attempts the row is marked `failed` and kept for inspection
-instead of being retried forever. Sent rows older than 30 days are deleted
+instead of being retried forever. A message Telegram rejects outright
+(e.g. bad HTML) is marked `failed` at once instead of being retried.
+Sent rows older than 30 days are deleted
 by the worker (checked roughly once an hour).
 
 The outbox is the only send path for stream notifications: the monitor

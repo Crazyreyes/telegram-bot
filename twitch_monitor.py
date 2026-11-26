@@ -13,6 +13,7 @@ from config import (
 from db import log_twitch_event
 from telegram_utils import send_message_with_retry
 from telegram.constants import ParseMode
+from telegram.error import TelegramError
 
 logger = logging.getLogger(__name__)
 
@@ -319,12 +320,16 @@ async def start_twitch_monitor(bot):
                     message += "🎮 <b>Twitch Monitor Started</b>\n\n"
                     message += "\n".join(startup_summary)
 
-                    await send_message_with_retry(
-                        bot,
-                        chat_id=STREAM_LOG_CHAT_ID,
-                        text=message,
-                        parse_mode=ParseMode.HTML,
-                    )
+                    try:
+                        await send_message_with_retry(
+                            bot,
+                            chat_id=STREAM_LOG_CHAT_ID,
+                            text=message,
+                            parse_mode=ParseMode.HTML,
+                        )
+                    except TelegramError:
+                        # Sent once only; a rejected summary is dropped.
+                        logger.exception("[TWITCH] Startup summary rejected.")
 
                     startup_summary.clear()
 
@@ -344,11 +349,14 @@ async def start_twitch_monitor(bot):
     except asyncio.CancelledError:
         logger.info("[TWITCH] Monitor shutting down")
 
-        await send_message_with_retry(
-            bot,
-            chat_id=STREAM_LOG_CHAT_ID,
-            text="[TWITCH] Monitor shutting down",
-        )
+        try:
+            await send_message_with_retry(
+                bot,
+                chat_id=STREAM_LOG_CHAT_ID,
+                text="[TWITCH] Monitor shutting down",
+            )
+        except TelegramError:
+            logger.exception("[TWITCH] Shutdown notice rejected.")
         raise
 
     finally:
