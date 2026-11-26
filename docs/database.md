@@ -2,7 +2,7 @@
 
 Reez Bot uses PostgreSQL for persistent storage.
 
-The database stores Twitch monitoring events.
+The database stores Twitch monitoring events and a notification outbox.
 
 ## Why PostgreSQL?
 
@@ -52,6 +52,28 @@ STREAM_UPDATE
 ```
 
 The table also stores previous title/game values when relevant and the raw Twitch API response.
+
+### `outbox`
+
+Stores queued stream notifications that the worker will send.
+
+Each row holds everything the worker needs to send the message later: the
+`twitch_events` row it belongs to (`twitch_event_id`), the target chat
+(`chat_id`), the message text (`message_text`) and its parse mode
+(`parse_mode`, e.g. `HTML`).
+
+Status bookkeeping for the worker:
+
+- `status` — `pending`, `sent` or `failed` (starts as `pending`).
+- `attempts` — how many send attempts have been made.
+- `last_error` — the error from the most recent failed attempt.
+- `next_attempt_at` — when the row is next due to be retried.
+- `created_at` / `sent_at` — when the row was queued and when it was sent.
+
+The event row and its outbox row are written in a single database
+transaction, so either both are saved or neither is. The outbox only queues
+for now: the bot still sends stream notifications directly, and the worker
+that reads `pending` rows is a later step.
 
 ## Environment Variables
 

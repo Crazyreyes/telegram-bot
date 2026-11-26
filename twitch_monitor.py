@@ -182,6 +182,9 @@ async def check_streamer(streamer, bot):
             game_name=stream["game_name"],
             message=message,
             raw_payload=stream,
+            notify_chat_id=STREAM_LOG_CHAT_ID,
+            notify_message=message,
+            notify_parse_mode=ParseMode.HTML.value,
         )
 
         state["live"] = True
@@ -213,6 +216,8 @@ async def check_streamer(streamer, bot):
             old_game_name=old_game,
             message=message,
             raw_payload=data,
+            notify_chat_id=STREAM_LOG_CHAT_ID,
+            notify_message=message,
         )
 
         state["live"] = False
@@ -272,6 +277,9 @@ async def check_streamer(streamer, bot):
                 old_game_name=old_game,
                 message=message,
                 raw_payload=stream,
+                notify_chat_id=STREAM_LOG_CHAT_ID,
+                notify_message=message,
+                notify_parse_mode=ParseMode.HTML.value,
             )
 
             if stream["title"] != state["title"]:

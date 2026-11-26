@@ -161,6 +161,10 @@ async def test_check_streamer_live(monkeypatch):
 
     assert logged_events[0]["event_type"] == "STARTUP_LIVE"
 
+    # Startup detection has no stream message to queue.
+    assert "notify_chat_id" not in logged_events[0]
+    assert "notify_message" not in logged_events[0]
+
     assert sent_messages == []
 
 
@@ -230,6 +234,12 @@ async def test_check_streamer_goes_live(monkeypatch):
 
     assert logged_events[0]["event_type"] == "LIVE"
 
+    assert logged_events[0]["notify_chat_id"] == twitch_monitor.STREAM_LOG_CHAT_ID
+
+    assert logged_events[0]["notify_message"] == sent_messages[0][1]["text"]
+
+    assert logged_events[0]["notify_parse_mode"] == "HTML"
+
     assert sent_messages[0][1]["chat_id"] == twitch_monitor.STREAM_LOG_CHAT_ID
 
     assert "TestStreamer" in sent_messages[0][1]["text"]
@@ -292,6 +302,13 @@ async def test_check_streamer_goes_offline(monkeypatch):
     assert logged_events[0]["old_title"] == "Testing my stream"
 
     assert logged_events[0]["old_game_name"] == "Just Chatting"
+
+    assert logged_events[0]["notify_chat_id"] == twitch_monitor.STREAM_LOG_CHAT_ID
+
+    assert logged_events[0]["notify_message"] == sent_messages[0][1]["text"]
+
+    # The offline message is plain text, so no parse mode is queued.
+    assert logged_events[0].get("notify_parse_mode") is None
 
     assert sent_messages[0][1]["chat_id"] == twitch_monitor.STREAM_LOG_CHAT_ID
 
@@ -367,6 +384,12 @@ async def test_check_streamer_title_update(monkeypatch):
     assert logged_events[0]["old_title"] == "Old stream title"
 
     assert logged_events[0]["old_game_name"] == "Just Chatting"
+
+    assert logged_events[0]["notify_chat_id"] == twitch_monitor.STREAM_LOG_CHAT_ID
+
+    assert logged_events[0]["notify_message"] == sent_messages[0][1]["text"]
+
+    assert logged_events[0]["notify_parse_mode"] == "HTML"
 
     assert sent_messages[0][1]["chat_id"] == twitch_monitor.STREAM_LOG_CHAT_ID
 
